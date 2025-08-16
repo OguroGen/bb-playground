@@ -6,23 +6,27 @@ const DIGIT_CONFIGS = [
   {
     position: "hundreds",
     colors: { upper: 0x3b82f6, lower: 0x3b82f6 }, // 青で統一
-    outlineColor: 0xffd700, // 金色の梁とアウトライン
+    beamColor: 0xffd700, // 金色の梁
   },
   {
     position: "tens", 
     colors: { upper: 0xfbbf24, lower: 0xfbbf24 }, // 黄色で統一
-    outlineColor: 0xffd700, // 金色の梁とアウトライン
+    beamColor: 0xffd700, // 金色の梁
   },
   {
     position: "ones",
     colors: { upper: 0xef4444, lower: 0xef4444 }, // 赤で統一
-    outlineColor: 0xffd700, // 金色の梁とアウトライン
+    beamColor: 0xffd700, // 金色の梁
     showTeiiten: true,
   }
 ];
 
 export default function App() {
   const [values, setValues] = useState([0, 0, 0]);
+  const [practiceMode, setPracticeMode] = useState(false);
+  const [targetValue, setTargetValue] = useState(null);
+  const [score, setScore] = useState(0);
+  const [problemCount, setProblemCount] = useState(0);
   const audioContextRef = useRef(null);
   
   const total = values[0] * 100 + values[1] * 10 + values[2];
@@ -86,6 +90,45 @@ export default function App() {
     }
   };
 
+  // 新しい問題を生成
+  const generateNewProblem = useCallback(() => {
+    const newTarget = Math.floor(Math.random() * 10); // 0-9の問題
+    setTargetValue(newTarget);
+    setProblemCount(prev => prev + 1);
+    
+    // 一の位の珠をリセット（問題対象なので）
+    setValues(prev => [prev[0], prev[1], 0]);
+  }, []);
+
+  // 練習モードの開始
+  const startPractice = useCallback(() => {
+    setPracticeMode(true);
+    setScore(0);
+    setProblemCount(0);
+    generateNewProblem();
+  }, [generateNewProblem]);
+
+  // 練習モードの終了
+  const stopPractice = useCallback(() => {
+    setPracticeMode(false);
+    setTargetValue(null);
+  }, []);
+
+  // 正解時の処理
+  const handleCorrect = useCallback((value) => {
+    setScore(prev => prev + 1);
+    
+    // 少し待ってから次の問題
+    setTimeout(() => {
+      generateNewProblem();
+    }, 1500);
+  }, [generateNewProblem]);
+
+  // 不正解時の処理（特に何もしない、フィードバック用）
+  const handleIncorrect = useCallback((value) => {
+    // console.log(`現在の値: ${value}, 目標: ${targetValue}`);
+  }, [targetValue]);
+
   const handleValueChange = useCallback((digitIndex, newValue) => {
     setValues(prevValues => {
       const updated = [...prevValues];
@@ -97,17 +140,52 @@ export default function App() {
   const resetAll = useCallback(() => {
     setValues([0, 0, 0]);
     playResetSound();
-  }, []);
+    
+    // 練習モードの場合は新しい問題を生成
+    if (practiceMode) {
+      setTimeout(() => {
+        generateNewProblem();
+      }, 1000);
+    }
+  }, [practiceMode, generateNewProblem]);
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>BeadBoost</h1>
         <div className="subtitle">デジタル計算練習ツール</div>
-        <button className="reset-button" onClick={resetAll}>
-          リセット
-        </button>
+        
+        <div className="control-buttons">
+          <button className="reset-button" onClick={resetAll}>
+            リセット
+          </button>
+          
+          {!practiceMode ? (
+            <button className="practice-button" onClick={startPractice}>
+              練習開始
+            </button>
+          ) : (
+            <button className="stop-practice-button" onClick={stopPractice}>
+              練習終了
+            </button>
+          )}
+        </div>
       </header>
+
+      {practiceMode && (
+        <div className="practice-info">
+          <div className="problem">
+            <span className="problem-label">問題:</span>
+            <span className="problem-number">{targetValue}</span>
+            <span className="problem-text">を作ってください</span>
+          </div>
+          <div className="score">
+            <span className="score-label">正解数:</span>
+            <span className="score-number">{score}</span>
+            <span className="score-total">/ {problemCount}</span>
+          </div>
+        </div>
+      )}
 
       <main className="main-content">
         <div className="bead-container">
@@ -119,10 +197,14 @@ export default function App() {
                 lowerHeight={250}
                 beadColorUpper={config.colors.upper}
                 beadColorLower={config.colors.lower}
-                outlineColor={config.outlineColor}
+                beamColor={config.beamColor}
                 showTeiiten={config.showTeiiten}
                 value={values[index]}
                 onChange={(newValue) => handleValueChange(index, newValue)}
+                // 練習モードでは一の位のみ正解判定
+                targetValue={practiceMode && index === 2 ? targetValue : null}
+                onCorrect={handleCorrect}
+                onIncorrect={handleIncorrect}
               />
             </div>
           ))}
@@ -133,7 +215,6 @@ export default function App() {
           <span className="total-value">{total.toLocaleString()}</span>
         </div>
       </main>
-
     </div>
   );
 }

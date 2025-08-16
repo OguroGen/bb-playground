@@ -2,26 +2,32 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { Application, Container, Graphics } from "pixi.js";
 
+// そろばんの構造定数（変更不可）
+const UPPER_SIZE = 2; // 上段の行数（五珠1個+空白1行）
+const LOWER_SIZE = 5; // 下段の行数（一珠4個+空白1行）
+
 export default function BeadColumn({
   value = 0,
   onChange,
   width = 120,
-  upperSize = 2,
-  lowerSize = 5,
   upperHeight = 100,
   lowerHeight = 250,
   showTeiiten = false,
   beadColorUpper = 0xef4444,
   beadColorLower = 0xef4444,
   showCellBorder = false,
-  outlineColor = 0x2d3748, // 灰色アウトラインの色（梁と同じ色）
+  beamColor = 0x2d3748, // 梁の色（アウトラインもこの色に合わせる）
+  // 正解判定関連のparams（将来用）
+  targetValue = null, // 正解の値（nullの場合は練習モードではない）
+  onCorrect = null, // 正解時のコールバック
+  onIncorrect = null, // 不正解時のコールバック
 }) {
   const hostRef = useRef(null);
   const appRef = useRef(null);
   const audioContextRef = useRef(null);
 
-  const upperCellH = useMemo(() => upperHeight / upperSize, [upperHeight, upperSize]);
-  const lowerCellH = useMemo(() => lowerHeight / lowerSize, [lowerHeight, lowerSize]);
+  const upperCellH = useMemo(() => upperHeight / UPPER_SIZE, [upperHeight]);
+  const lowerCellH = useMemo(() => lowerHeight / LOWER_SIZE, [lowerHeight]);
   // シンプルにコンテナの幅を使用
   const hariH = Math.max(10, upperCellH * 0.6);
 
@@ -48,16 +54,59 @@ export default function BeadColumn({
       gainNode.connect(audioContext.destination);
 
       if (type === 'bead') {
-        // 珠の音：明るいピンク音
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.1);
+        // 珠の音：控えめで大人しい音（梁から離れる時）
+        oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.08);
         oscillator.type = 'sine';
 
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+        gainNode.gain.setValueAtTime(0.15, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
 
         oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.2);
+        oscillator.stop(audioContext.currentTime + 0.15);
+      } else if (type === 'correct') {
+        // 正解音：明るくて心地よいファンファーレ音
+        const frequencies = [523.25, 659.25, 783.99]; // C5, E5, G5 (メジャーコード)
+        
+        frequencies.forEach((freq, index) => {
+          setTimeout(() => {
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            
+            osc.frequency.setValueAtTime(freq, audioContext.currentTime);
+            osc.type = 'triangle';
+            
+            gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            osc.start(audioContext.currentTime);
+            osc.stop(audioContext.currentTime + 0.3);
+          }, index * 80); // 少しずつずらして和音を作る
+        });
+        
+        // 最後に高音のキラキラ音を追加
+        setTimeout(() => {
+          const sparkle = audioContext.createOscillator();
+          const sparkleGain = audioContext.createGain();
+          
+          sparkle.connect(sparkleGain);
+          sparkleGain.connect(audioContext.destination);
+          
+          sparkle.frequency.setValueAtTime(1760, audioContext.currentTime); // A6
+          sparkle.frequency.exponentialRampToValueAtTime(2093, audioContext.currentTime + 0.2); // C7
+          sparkle.type = 'sine';
+          
+          sparkleGain.gain.setValueAtTime(0.15, audioContext.currentTime);
+          sparkleGain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+          
+          sparkle.start(audioContext.currentTime);
+          sparkle.stop(audioContext.currentTime + 0.4);
+        }, 240);
+        
+        return; // 以下の処理をスキップ
       } else if (type === 'special') {
         // 特別な珠の音：キラキラ音
         oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
@@ -109,8 +158,22 @@ export default function BeadColumn({
   const notifyValue = () => {
     const upperValue = upperBlankRef.current === 0 ? 5 : 0;
     const calculatedValue = upperValue + lowerBlankRef.current;
+    
+    // 値が変わった場合のみ処理
     if (onChange && calculatedValue !== value) {
       onChange(calculatedValue);
+      
+      // 正解判定（練習モードの場合）
+      if (targetValue !== null) {
+        if (calculatedValue === targetValue) {
+          // 正解！
+          playBeadSound('correct');
+          if (onCorrect) onCorrect(calculatedValue);
+        } else {
+          // 不正解または途中
+          if (onIncorrect) onIncorrect(calculatedValue);
+        }
+      }
     }
   };
 
@@ -153,12 +216,12 @@ export default function BeadColumn({
       .fill();
   };
 
-  // 灰色アウトライン専用の描画関数（最背面）
-  const drawGrayOutline = (g, x, y, r, isSpecial = false) => {
+  // 梁色アウトライン専用の描画関数（最背面）
+  const drawBeamColorOutline = (g, x, y, r, isSpecial = false) => {
     g.clear();
     if (isSpecial) {
-      // 変数で管理されたアウトライン色（太い）
-      g.stroke({ width: 4, color: outlineColor, alpha: 0.8 })
+      // 梁と同じ色のアウトライン（太い）
+      g.stroke({ width: 4, color: beamColor, alpha: 0.8 })
         .circle(0, 0, r + 4) // 相対位置で描画
         .stroke();
     }
@@ -225,15 +288,15 @@ export default function BeadColumn({
 
       const stage = app.stage;
       const gridLayer = new Container();
-      const grayOutlineLayer = new Container(); // 灰色のアウトライン（最背面）
+      const beamOutlineLayer = new Container(); // 梁色のアウトライン（最背面）
       const whiteOutlineLayer = new Container(); // 白のアウトライン
       const upperLayer = new Container(); // 珠本体
       const lowerLayer = new Container(); // 珠本体
       const hariLayer = new Container(); // 梁（最前面）
-      // レイヤー順序: 灰色アウトライン → 白アウトライン → 珠 → 梁
-      stage.addChild(gridLayer, grayOutlineLayer, whiteOutlineLayer, upperLayer, lowerLayer, hariLayer);
+      // レイヤー順序: 梁色アウトライン → 白アウトライン → 珠 → 梁
+      stage.addChild(gridLayer, beamOutlineLayer, whiteOutlineLayer, upperLayer, lowerLayer, hariLayer);
       // シンプルなセンター寄せ
-      [gridLayer, grayOutlineLayer, whiteOutlineLayer, upperLayer, lowerLayer, hariLayer].forEach(
+      [gridLayer, beamOutlineLayer, whiteOutlineLayer, upperLayer, lowerLayer, hariLayer].forEach(
         (c) => (c.x = width / 2) // props.widthの中央
       );
 
@@ -242,17 +305,17 @@ export default function BeadColumn({
       const hari = new Graphics();
 
       // 梁の影
-      hari.fill({ color: darkenColor(outlineColor, 0.6), alpha: 0.3 })
+      hari.fill({ color: darkenColor(beamColor, 0.6), alpha: 0.3 })
         .roundRect(-width / 2 + 2, -hariH / 2 + 2, width, hariH, 8)
         .fill();
 
       // 梁のメイン（少し透明度を下げて下の珠が見えるように）
-      hari.fill({ color: outlineColor, alpha: 0.9 })
+      hari.fill({ color: beamColor, alpha: 0.9 })
         .roundRect(-width / 2, -hariH / 2, width, hariH, 8)
         .fill();
 
-      // 梁のハイライト（outlineColorから自動計算）
-      hari.fill({ color: lightenColor(outlineColor, 0.3), alpha: 0.7 })
+      // 梁のハイライト（beamColorから自動計算）
+      hari.fill({ color: lightenColor(beamColor, 0.3), alpha: 0.7 })
         .roundRect(-width / 2, -hariH / 2, width, hariH / 3, 8)
         .fill();
 
@@ -287,12 +350,12 @@ export default function BeadColumn({
       if (showCellBorder) {
         const grid = new Graphics();
         grid.stroke({ width: 1, color: 0x94a3b8, alpha: 0.3 });
-        for (let r = 0; r < upperSize; r++)
+        for (let r = 0; r < UPPER_SIZE; r++)
           grid.rect(-width / 2, upperRectY(r), width, upperCellH);
         grid.stroke({ width: 2, color: 0x334155, alpha: 0.5 });
         grid.rect(-width / 2, upperHeight, width, hariH);
         grid.stroke({ width: 1, color: 0x94a3b8, alpha: 0.3 });
-        for (let r = 0; r < lowerSize; r++)
+        for (let r = 0; r < LOWER_SIZE; r++)
           grid.rect(-width / 2, lowerRectY(r), width, lowerCellH);
         gridLayer.addChild(grid);
       }
@@ -303,9 +366,9 @@ export default function BeadColumn({
       drawCuteBead(upperBead, upperRadius, beadColorUpper);
       upperLayer.addChild(upperBead);
 
-      // 上段の灰色アウトライン（最背面）
-      const upperGrayOutline = new Graphics();
-      grayOutlineLayer.addChild(upperGrayOutline);
+      // 上段の梁色アウトライン（最背面）
+      const upperBeamOutline = new Graphics();
+      beamOutlineLayer.addChild(upperBeamOutline);
 
       // 上段の白アウトライン
       const upperWhiteOutline = new Graphics();
@@ -314,20 +377,20 @@ export default function BeadColumn({
       const redrawUpperBead = (stickHari) => {
         drawCuteBead(upperBead, upperRadius, beadColorUpper);
         // アウトラインの位置、スケール、回転を珠と同期
-        upperGrayOutline.x = upperBead.x;
-        upperGrayOutline.y = upperBead.y;
-        upperGrayOutline.scale.copyFrom(upperBead.scale);
-        upperGrayOutline.rotation = upperBead.rotation;
+        upperBeamOutline.x = upperBead.x;
+        upperBeamOutline.y = upperBead.y;
+        upperBeamOutline.scale.copyFrom(upperBead.scale);
+        upperBeamOutline.rotation = upperBead.rotation;
         upperWhiteOutline.x = upperBead.x;
         upperWhiteOutline.y = upperBead.y;
         upperWhiteOutline.scale.copyFrom(upperBead.scale);
         upperWhiteOutline.rotation = upperBead.rotation;
         // アウトラインを各レイヤーに描画
-        drawGrayOutline(upperGrayOutline, 0, 0, upperRadius, stickHari);
+        drawBeamColorOutline(upperBeamOutline, 0, 0, upperRadius, stickHari);
         drawWhiteOutline(upperWhiteOutline, 0, 0, upperRadius, stickHari);
       };
 
-      const beadCount = lowerSize - 1;
+      const beadCount = LOWER_SIZE - 1;
       const lowerBeads = Array.from({ length: beadCount }).map(() => {
         const g = new Graphics();
         g.x = 0;
@@ -337,10 +400,10 @@ export default function BeadColumn({
         return g;
       });
 
-      // 下段の灰色アウトライン（最背面）
-      const lowerGrayOutlines = Array.from({ length: beadCount }).map(() => {
+      // 下段の梁色アウトライン（最背面）
+      const lowerBeamOutlines = Array.from({ length: beadCount }).map(() => {
         const g = new Graphics();
-        grayOutlineLayer.addChild(g);
+        beamOutlineLayer.addChild(g);
         return g;
       });
 
@@ -360,16 +423,36 @@ export default function BeadColumn({
         return r;
       };
 
+      // アニメーション用のパラメータ
+      const springK = 0.18; // 梁から離れる時の適度なバウンド
+      const damping = 0.78;  // 適度なダンピング
+      const smoothK = 0.05;  // 梁にくっつく時のスムーズな移動
+      const smoothDamping = 0.50; // 強いダンピングでバウンドを抑制
+      let vyUpper = 0;
+      const vyLower = lowerBeads.map(() => 0);
+      
+      // 上段の直前の動作を記憶
+      let upperLastAction = null; // 'stick' or 'release'
+      
+      // 下段の直前の動作を記憶
+      const lowerLastActions = lowerBeads.map(() => null);
+
       const upperHits = new Container();
       upperLayer.addChild(upperHits);
-      for (let r = 0; r < upperSize; r++) {
+      for (let r = 0; r < UPPER_SIZE; r++) {
         upperHits.addChild(
           makeHitRect(-width / 2, upperRectY(r), width, upperCellH, () => {
             if (r !== upperBlankRef.current) {
+              const oldBlankIndex = upperBlankRef.current;
               upperBlankRef.current = r;
 
-              // 上段の珠が梁にくっつく場合は特別な音
-              const willStickToHari = r === 0;
+              // 上段で梁にくっつく時の特別な音の判定
+              // 条件：ビーズがブランクより上の行に移動する時（アウトラインが付く時）
+              const willStickToHari = oldBlankIndex > r;
+              
+              // アニメーション用の動作記録（逆にする）
+              upperLastAction = willStickToHari ? 'stick' : 'release';
+              
               playBeadSound(willStickToHari ? 'special' : 'bead');
 
               notifyValue();
@@ -379,14 +462,23 @@ export default function BeadColumn({
       }
       const lowerHits = new Container();
       lowerLayer.addChild(lowerHits);
-      for (let r = 0; r < lowerSize; r++) {
+      for (let r = 0; r < LOWER_SIZE; r++) {
         lowerHits.addChild(
           makeHitRect(-width / 2, lowerRectY(r), width, lowerCellH, () => {
             if (r !== lowerBlankRef.current) {
+              const oldBlankIndex = lowerBlankRef.current;
               lowerBlankRef.current = r;
 
-              // 下段で梁にくっつく珠の場合は特別な音
-              const willStickToHari = r < lowerBlankRef.current;
+              // 下段で梁にくっつく時の特別な音の判定
+              // 条件：ビーズがブランクより下の行に移動する時（アウトラインが付く時）
+              // oldBlankIndex < r の時、ビーズが下に移動して梁にくっつく
+              const willStickToHari = oldBlankIndex < r;
+              
+              // アニメーション用の動作記録（全ての下段ビーズに適用、逆にする）
+              for (let i = 0; i < lowerLastActions.length; i++) {
+                lowerLastActions[i] = willStickToHari ? 'stick' : 'release';
+              }
+              
               playBeadSound(willStickToHari ? 'special' : 'bead');
 
               notifyValue();
@@ -395,22 +487,22 @@ export default function BeadColumn({
         );
       }
 
-      const springK = 0.18;
-      const damping = 0.78;
-      let vyUpper = 0;
-      const vyLower = lowerBeads.map(() => 0);
       const rowsWithoutBlank = () => {
         const rows = [];
-        for (let r = 0; r < lowerSize; r++)
+        for (let r = 0; r < LOWER_SIZE; r++)
           if (r !== lowerBlankRef.current) rows.push(r);
         return rows;
       };
 
       app.ticker.add(() => {
+        // 上段のアニメーション処理（動作に応じたパラメータ）
+        const currentK = upperLastAction === 'release' ? smoothK : springK;
+        const currentDamping = upperLastAction === 'release' ? smoothDamping : damping;
+        
         const upperTargetRow = upperBlankRef.current === 0 ? 1 : 0;
         const yTargetUpper = upperRowCenterY(upperTargetRow);
         const dyU = yTargetUpper - upperBead.y;
-        vyUpper = vyUpper * damping + dyU * springK;
+        vyUpper = vyUpper * currentDamping + dyU * currentK;
         upperBead.y += vyUpper;
         const stickHari = upperTargetRow === 1;
 
@@ -430,9 +522,14 @@ export default function BeadColumn({
         const rows = rowsWithoutBlank();
         for (let i = 0; i < lowerBeads.length; i++) {
           const bead = lowerBeads[i];
+          
+          // 下段のアニメーション処理（動作に応じたパラメータ）
+          const currentLowerK = lowerLastActions[i] === 'release' ? smoothK : springK;
+          const currentLowerDamping = lowerLastActions[i] === 'release' ? smoothDamping : damping;
+          
           const yTarget = lowerRowCenterY(rows[i]);
           const dy = yTarget - bead.y;
-          vyLower[i] = vyLower[i] * damping + dy * springK;
+          vyLower[i] = vyLower[i] * currentLowerDamping + dy * currentLowerK;
           bead.y += vyLower[i];
 
           // 下段のビーズが梁にくっついているかどうかを判定
@@ -458,17 +555,17 @@ export default function BeadColumn({
           drawCuteBead(bead, lowerRadius, beadColorLower);
           
           // アウトラインの位置、スケール、回転を珠と同期
-          lowerGrayOutlines[i].x = bead.x;
-          lowerGrayOutlines[i].y = bead.y;
-          lowerGrayOutlines[i].scale.copyFrom(bead.scale);
-          lowerGrayOutlines[i].rotation = bead.rotation;
+          lowerBeamOutlines[i].x = bead.x;
+          lowerBeamOutlines[i].y = bead.y;
+          lowerBeamOutlines[i].scale.copyFrom(bead.scale);
+          lowerBeamOutlines[i].rotation = bead.rotation;
           lowerWhiteOutlines[i].x = bead.x;
           lowerWhiteOutlines[i].y = bead.y;
           lowerWhiteOutlines[i].scale.copyFrom(bead.scale);
           lowerWhiteOutlines[i].rotation = bead.rotation;
           
           // アウトラインを各レイヤーに描画
-          drawGrayOutline(lowerGrayOutlines[i], 0, 0, lowerRadius, isStickingToHari);
+          drawBeamColorOutline(lowerBeamOutlines[i], 0, 0, lowerRadius, isStickingToHari);
           drawWhiteOutline(lowerWhiteOutlines[i], 0, 0, lowerRadius, isStickingToHari);
         }
       });
@@ -503,7 +600,7 @@ export default function BeadColumn({
     hariH,
     beadColorUpper,
     beadColorLower,
-    outlineColor,
+    beamColor,
     showTeiiten,
     showCellBorder,
   ]);
