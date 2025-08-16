@@ -9,7 +9,7 @@ export default function BeadColumn({
   upperSize = 2,
   lowerSize = 5,
   upperHeight = 100,
-  lowerHeight = 260,
+  lowerHeight = 250,
   showTeiiten = false,
   beadColorUpper = 0xef4444,
   beadColorLower = 0xef4444,
@@ -21,7 +21,7 @@ export default function BeadColumn({
 
   const upperCellH = useMemo(() => upperHeight / upperSize, [upperHeight, upperSize]);
   const lowerCellH = useMemo(() => lowerHeight / lowerSize, [lowerHeight, lowerSize]);
-  const colWidth = Math.max(upperCellH, lowerCellH);
+  const colWidth = Math.max(upperCellH, lowerCellH)*1.5;
   const hariH = Math.max(10, upperCellH * 0.6);
 
   const upperRadius = useMemo(() => upperCellH * 0.5, [upperCellH]);
