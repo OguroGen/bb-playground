@@ -111,7 +111,7 @@ export default function App() {
           {DIGIT_CONFIGS.map((config, index) => (
             <div key={config.position} className="bead-column">
               <BeadColumn
-                width={100}
+                width={200}
                 upperHeight={80}
                 lowerHeight={200}
                 beadColorUpper={config.colors.upper}
