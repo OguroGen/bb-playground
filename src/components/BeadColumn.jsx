@@ -426,7 +426,7 @@ export default function BeadColumn({
       // アニメーション用のパラメータ
       const springK = 0.18; // 梁から離れる時の適度なバウンド
       const damping = 0.78;  // 適度なダンピング
-      const smoothK = 0.05;  // 梁にくっつく時のスムーズな移動
+      const smoothK = 0.20;  // 梁にくっつく時のスムーズな移動
       const smoothDamping = 0.50; // 強いダンピングでバウンドを抑制
       let vyUpper = 0;
       const vyLower = lowerBeads.map(() => 0);
