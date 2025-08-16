@@ -113,11 +113,6 @@
 .bead-column {
   flex-shrink: 0;
   filter: drop-shadow(0 8px 25px rgba(0, 0, 0, 0.15));
-  transition: transform 0.3s ease;
-}
-
-.bead-column:hover {
-  transform: scale(1.02);
 }
 
 .total-display {

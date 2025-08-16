@@ -6,14 +6,17 @@ const DIGIT_CONFIGS = [
   {
     position: "hundreds",
     colors: { upper: 0x3b82f6, lower: 0x3b82f6 }, // 青で統一
+    outlineColor: 0xffd700, // 金色の梁とアウトライン
   },
   {
     position: "tens", 
     colors: { upper: 0xfbbf24, lower: 0xfbbf24 }, // 黄色で統一
+    outlineColor: 0xffd700, // 金色の梁とアウトライン
   },
   {
     position: "ones",
     colors: { upper: 0xef4444, lower: 0xef4444 }, // 赤で統一
+    outlineColor: 0xffd700, // 金色の梁とアウトライン
     showTeiiten: true,
   }
 ];
@@ -111,11 +114,12 @@ export default function App() {
           {DIGIT_CONFIGS.map((config, index) => (
             <div key={config.position} className="bead-column">
               <BeadColumn
-                width={200}
-                upperHeight={80}
-                lowerHeight={200}
+                width={100}
+                upperHeight={100}
+                lowerHeight={250}
                 beadColorUpper={config.colors.upper}
                 beadColorLower={config.colors.lower}
+                outlineColor={config.outlineColor}
                 showTeiiten={config.showTeiiten}
                 value={values[index]}
                 onChange={(newValue) => handleValueChange(index, newValue)}
